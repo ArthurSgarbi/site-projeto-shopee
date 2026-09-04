@@ -1,0 +1,7 @@
+# Copie este arquivo para .dev.vars e preencha os valores somente na cópia.
+# Use uma chave da RESEND. Chaves do Gemini/Google não funcionam aqui.
+RESEND_API_KEY=""
+EMAIL_FROM="SYNC Mobile <onboarding@resend.dev>"
+# Necessários apenas para criar o administrador em um banco novo.
+INITIAL_ADMIN_EMAIL=""
+INITIAL_ADMIN_PASSWORD=""
