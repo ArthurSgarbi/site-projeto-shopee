@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Miniflare } from 'miniflare';
+import { verifyCampaigns } from './campaigns-integration.mjs';
+import { verifyRecords } from './records-integration.mjs';
+import { verifySalesFlow } from './sales-flow-integration.mjs';
+import { verifySecurity } from './security-integration.mjs';
 
 const projectDir = path.resolve(import.meta.dirname, '..');
 const serverDir = path.join(projectDir, 'dist/server');
@@ -80,15 +84,15 @@ try {
   await anonymous.text();
   const login = await runtime.dispatchFetch('http://localhost/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: 'http://localhost' },
     body: JSON.stringify({ email, password }),
   });
   const result = await login.json();
   assert.equal(login.status, 503);
   assert.match(
     result.error,
-    /Gemini\/Google/,
-    'Login deve chegar ao aviso de provedor incorreto, sem enviar e-mail.',
+    /Não foi possível enviar/,
+    'Login deve falhar de forma genérica, sem expor a configuração.',
   );
   assert.equal(
     (await db.prepare('SELECT COUNT(*) AS count FROM admins').first()).count,
@@ -100,13 +104,17 @@ try {
     0,
   );
   assert.equal(
-    (await db.prepare('SELECT COUNT(*) AS count FROM login_challenges').first())
-      .count,
-    0,
+    (await db.prepare('SELECT attempts FROM auth_challenges').first()).attempts,
+    5,
+    'Falha do provedor deve fechar o desafio sem liberar novas tentativas.',
   );
   console.log(
     `Integração aprovada: página, ${assets.size} recursos, administrador novo e bloqueio de chave de outro provedor. Nenhum e-mail enviado.`,
   );
+  await verifySecurity(runtime, db);
+  await verifyCampaigns(runtime, db);
+  await verifyRecords(runtime, db);
+  await verifySalesFlow(runtime, db);
 } finally {
   await runtime.dispose();
 }

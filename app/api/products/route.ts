@@ -2,8 +2,12 @@ import { desc, eq } from 'drizzle-orm';
 import { getDb, getRawDb } from '@/db';
 import { products } from '@/db/schema';
 import { getSessionAdmin } from '@/lib/auth';
-
-const noStoreHeaders = { 'Cache-Control': 'no-store' };
+import {
+  assertSafeMutation,
+  httpFailure,
+  noStoreHeaders,
+  readJson,
+} from '@/lib/http-security';
 
 class PayloadError extends Error {}
 
@@ -12,6 +16,7 @@ function jsonError(error: string, status: number) {
 }
 
 async function requireAdmin(request: Request) {
+  assertSafeMutation(request);
   return Boolean(await getSessionAdmin(request));
 }
 
@@ -22,6 +27,8 @@ function nonNegativeInteger(source: Record<string, unknown>, key: string) {
       `O campo ${key} deve ser um número inteiro maior ou igual a zero.`,
     );
   }
+  if (!Number.isSafeInteger(value) || value > 1_000_000_000)
+    throw new PayloadError(`O campo ${key} excede o limite permitido.`);
   return value;
 }
 
@@ -40,9 +47,12 @@ function parsePayload(value: unknown) {
 
   return {
     id,
-    name: source.name.trim(),
-    sku: source.sku.trim().toUpperCase(),
-    category: typeof source.category === 'string' ? source.category.trim() : '',
+    name: source.name.trim().slice(0, 120),
+    sku: source.sku.trim().toUpperCase().slice(0, 64),
+    category:
+      typeof source.category === 'string'
+        ? source.category.trim().slice(0, 80)
+        : '',
     stock: nonNegativeInteger(source, 'stock'),
     minStock: nonNegativeInteger(source, 'minStock'),
     weeklyOrders: nonNegativeInteger(source, 'weeklyOrders'),
@@ -58,7 +68,7 @@ function parsePayload(value: unknown) {
 
 function databaseFailure(operation: string, error: unknown) {
   const message = error instanceof Error ? error.message : 'erro desconhecido';
-  console.error(`[products] Falha ao ${operation}.`, message);
+  console.error(`[products] Falha ao ${operation}.`);
   if (message.includes('UNIQUE constraint failed'))
     return jsonError('Já existe um produto com este SKU.', 409);
   return jsonError('Banco de dados indisponível. Tente novamente.', 503);
@@ -74,6 +84,8 @@ export async function GET(request: Request) {
       .orderBy(desc(products.updatedAt));
     return Response.json(result, { headers: noStoreHeaders });
   } catch (error) {
+    const safeFailure = httpFailure(error);
+    if (safeFailure) return safeFailure;
     return databaseFailure('listar produtos', error);
   }
 }
@@ -82,10 +94,14 @@ export async function POST(request: Request) {
   try {
     if (!(await requireAdmin(request)))
       return jsonError('Autenticação necessária.', 401);
-    const body: unknown = await request.json();
+    const body: unknown = await readJson(request, 262_144);
 
     if (Array.isArray(body)) {
+      const restoreOnly =
+        new URL(request.url).searchParams.get('mode') === 'restore';
       if (!body.length) return Response.json([], { headers: noStoreHeaders });
+      if (body.length > 250)
+        return jsonError('Importe no máximo 250 produtos por vez.', 413);
       const now = Date.now();
       const statements = body.map((item) => {
         const { id: _id, ...value } = parsePayload(item);
@@ -97,7 +113,10 @@ export async function POST(request: Request) {
             weekly_expenses_cents, weekly_ad_spend_cents,
             weekly_ad_revenue_cents, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(sku) DO UPDATE SET
+          ${
+            restoreOnly
+              ? 'ON CONFLICT(sku) DO NOTHING'
+              : `ON CONFLICT(sku) DO UPDATE SET
             name = excluded.name,
             category = excluded.category,
             stock = excluded.stock,
@@ -110,7 +129,8 @@ export async function POST(request: Request) {
             weekly_expenses_cents = excluded.weekly_expenses_cents,
             weekly_ad_spend_cents = excluded.weekly_ad_spend_cents,
             weekly_ad_revenue_cents = excluded.weekly_ad_revenue_cents,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at`
+          }
         `)
           .bind(
             value.name,
@@ -144,6 +164,8 @@ export async function POST(request: Request) {
       .returning();
     return Response.json(created, { status: 201, headers: noStoreHeaders });
   } catch (error) {
+    const safeFailure = httpFailure(error);
+    if (safeFailure) return safeFailure;
     if (error instanceof PayloadError) return jsonError(error.message, 400);
     return databaseFailure('salvar produto', error);
   }
@@ -153,7 +175,7 @@ export async function PUT(request: Request) {
   try {
     if (!(await requireAdmin(request)))
       return jsonError('Autenticação necessária.', 401);
-    const payload = parsePayload(await request.json());
+    const payload = parsePayload(await readJson(request));
     if (!payload.id) throw new PayloadError('Produto não informado.');
     const { id, ...values } = payload;
     const [updated] = await getDb()
@@ -164,6 +186,8 @@ export async function PUT(request: Request) {
     if (!updated) return jsonError('Produto não encontrado.', 404);
     return Response.json(updated, { headers: noStoreHeaders });
   } catch (error) {
+    const safeFailure = httpFailure(error);
+    if (safeFailure) return safeFailure;
     if (error instanceof PayloadError) return jsonError(error.message, 400);
     return databaseFailure('atualizar produto', error);
   }
@@ -183,6 +207,8 @@ export async function DELETE(request: Request) {
     if (!result.length) return jsonError('Produto não encontrado.', 404);
     return new Response(null, { status: 204, headers: noStoreHeaders });
   } catch (error) {
+    const safeFailure = httpFailure(error);
+    if (safeFailure) return safeFailure;
     return databaseFailure('excluir produto', error);
   }
 }

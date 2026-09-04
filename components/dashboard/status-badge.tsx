@@ -7,6 +7,8 @@ const styles: Record<string, string> = {
   Entregue: 'border-[#cce4d3] bg-[#edf8f0] text-[#2e7044]',
   'Em trânsito': 'border-[#cddbea] bg-[#eef4fa] text-[#315b8a]',
   Preparando: 'border-[#e2d5ef] bg-[#f6effb] text-[#76508d]',
+  'Não enviado': 'border-[#f1d6a5] bg-[#fff8e7] text-[#936000]',
+  'A caminho': 'border-[#cddbea] bg-[#eef4fa] text-[#315b8a]',
 };
 
 export function StatusBadge({ status }: { status: string }) {

@@ -11,6 +11,7 @@ import {
   TruckIcon,
 } from '@heroicons/react/24/outline';
 import type { SectionKey } from './types';
+import { DEFAULT_SIDEBAR_ORDER } from '@/lib/navigation';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -27,10 +28,20 @@ const navigation: Array<{ id: SectionKey; label: string; icon: Icon }> = [
 type NavigationProps = {
   activeSection: SectionKey;
   onSelect: (section: SectionKey) => void;
+  order?: SectionKey[];
 };
 
-function NavigationItems({ activeSection, onSelect }: NavigationProps) {
-  return navigation.map(({ id, label, icon: IconComponent }) => {
+function NavigationItems({
+  activeSection,
+  onSelect,
+  order = DEFAULT_SIDEBAR_ORDER,
+}: NavigationProps) {
+  return order.map((section) => {
+    const {
+      id,
+      label,
+      icon: IconComponent,
+    } = navigation.find((item) => item.id === section)!;
     const active = activeSection === id;
     return (
       <button
@@ -53,10 +64,14 @@ function NavigationItems({ activeSection, onSelect }: NavigationProps) {
   });
 }
 
-export function DashboardSidebar({ activeSection, onSelect }: NavigationProps) {
+export function DashboardSidebar({
+  activeSection,
+  onSelect,
+  order,
+}: NavigationProps) {
   return (
-    <aside className="hidden w-[236px] shrink-0 border-r border-[#eadeda] bg-[#fff0ec] px-5 py-6 dark:border-[#432a25] dark:bg-[#21120f] lg:flex lg:flex-col">
-      <div className="flex items-center gap-3 px-2">
+    <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 self-start flex-col overflow-hidden border-r border-[#eadeda] bg-[#fff0ec] px-5 py-6 dark:border-[#432a25] dark:bg-[#21120f] lg:flex">
+      <div className="flex shrink-0 items-center gap-3 px-2">
         <div className="size-12 overflow-hidden rounded-xl border border-[#d8dfd1] bg-white shadow-[0_8px_24px_rgba(36,92,59,.14)]">
           <Image
             src="/sync-mobile-logo.jpeg"
@@ -75,11 +90,18 @@ export function DashboardSidebar({ activeSection, onSelect }: NavigationProps) {
         </div>
       </div>
 
-      <nav className="mt-9 space-y-1" aria-label="Navegação principal">
-        <NavigationItems activeSection={activeSection} onSelect={onSelect} />
+      <nav
+        className="mt-9 mb-6 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain"
+        aria-label="Navegação principal"
+      >
+        <NavigationItems
+          activeSection={activeSection}
+          onSelect={onSelect}
+          order={order}
+        />
       </nav>
 
-      <div className="mt-auto rounded-2xl border border-[#d8dfd1] bg-white/70 p-4 dark:border-[#304238] dark:bg-white/5">
+      <div className="shrink-0 rounded-2xl border border-[#d8dfd1] bg-white/70 p-4 dark:border-[#304238] dark:bg-white/5">
         <div className="mb-3 grid size-8 place-items-center rounded-lg bg-[#fff0c9] text-[#936000]">
           <SparklesIcon className="size-4" />
         </div>
@@ -93,10 +115,18 @@ export function DashboardSidebar({ activeSection, onSelect }: NavigationProps) {
   );
 }
 
-export function MobileNavigation({ activeSection, onSelect }: NavigationProps) {
+export function MobileNavigation({
+  activeSection,
+  onSelect,
+  order,
+}: NavigationProps) {
   return (
     <nav className="grid grid-cols-2 gap-2" aria-label="Navegação móvel">
-      <NavigationItems activeSection={activeSection} onSelect={onSelect} />
+      <NavigationItems
+        activeSection={activeSection}
+        onSelect={onSelect}
+        order={order}
+      />
     </nav>
   );
 }

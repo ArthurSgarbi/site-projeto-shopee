@@ -7,22 +7,26 @@ import {
 } from '@heroicons/react/24/outline';
 import { Switch } from '@/components/ui/switch';
 import { ViewHeading } from './view-heading';
+import { SidebarSettings, type SidebarSettingsProps } from './sidebar-settings';
+import { SecuritySettings } from './security-settings';
 
 type SettingsViewProps = {
   darkMode: boolean;
   onDarkModeChange: (enabled: boolean) => void;
+  sidebar: SidebarSettingsProps;
 };
 
 export function SettingsView({
   darkMode,
   onDarkModeChange,
+  sidebar,
 }: SettingsViewProps) {
   return (
     <div className="space-y-6">
       <ViewHeading
         eyebrow="Preferências"
         title="Configurações do site"
-        description="Personalize a experiência do painel neste dispositivo."
+        description="Personalize a aparência e organize as abas do seu painel."
       />
 
       <section className="overflow-hidden rounded-2xl border border-[#dfe4da] bg-white shadow-sm dark:border-[#2b3b31] dark:bg-[#17231b]">
@@ -74,6 +78,10 @@ export function SettingsView({
         </div>
       </section>
 
+      <SidebarSettings {...sidebar} />
+
+      <SecuritySettings />
+
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-[#dfe4da] bg-white p-5 shadow-sm dark:border-[#2b3b31] dark:bg-[#17231b]">
           <ComputerDesktopIcon className="size-5 text-[#ee4d2d] dark:text-[#ff8c75]" />
@@ -91,7 +99,7 @@ export function SettingsView({
           </div>
           <p className="mt-4 text-sm font-semibold">Identidade preservada</p>
           <p className="mt-1 text-sm leading-relaxed text-[#718075] dark:text-[#9eaca2]">
-            As cores verdes da SYNC Mobile continuam destacando ações e
+            As cores vermelhas da SYNC Mobile continuam destacando ações e
             indicadores importantes.
           </p>
         </div>

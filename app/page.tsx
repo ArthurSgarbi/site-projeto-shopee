@@ -4,6 +4,7 @@ import {
   SubmitEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -25,7 +26,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { AdsView } from '@/components/dashboard/ads-view';
-import { emptyProductDraft, demoProducts } from '@/components/dashboard/data';
+import { emptyProductDraft } from '@/components/dashboard/data';
+import {
+  ApiError,
+  loadProducts,
+  normalizeProduct,
+  persistProduct,
+  productRequest,
+} from '@/lib/product-storage';
 import { DeliveriesView } from '@/components/dashboard/deliveries-view';
 import { OrdersView } from '@/components/dashboard/orders-view';
 import { OverviewView } from '@/components/dashboard/overview-view';
@@ -42,6 +50,7 @@ import type {
   SectionKey,
 } from '@/components/dashboard/types';
 import { calculateTotals } from '@/components/dashboard/utils';
+import { useSidebarOrder } from '@/hooks/use-sidebar-order';
 import {
   AuthLoading,
   LoginView,
@@ -83,51 +92,25 @@ function updateDarkMode(enabled: boolean) {
   window.dispatchEvent(new Event(THEME_EVENT));
 }
 
-function normalizeProduct(product: Product): Product {
-  return {
-    ...product,
-    weeklyAdSpendCents: product.weeklyAdSpendCents ?? 0,
-    weeklyAdRevenueCents: product.weeklyAdRevenueCents ?? 0,
-  };
-}
-
-async function persistProduct(product: Product, method: 'POST' | 'PUT') {
-  const response = await fetch('/api/products', {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(product),
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new ApiError(
-      response.status,
-      payload?.error ?? 'Não foi possível salvar o produto.',
-    );
-  }
-  return (await response.json()) as Product;
-}
-
-class ApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
 export default function Home() {
   const [authStatus, setAuthStatus] = useState<
     'loading' | 'authenticated' | 'unauthenticated'
   >('loading');
   const [admin, setAdmin] = useState<AuthenticatedAdmin | null>(null);
+  const sidebar = useSidebarOrder(
+    authStatus === 'authenticated' ? (admin?.id ?? null) : null,
+  );
   const [activeSection, setActiveSection] = useState<SectionKey>('overview');
+  const [saleProduct, setSaleProduct] = useState<Product | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [products, setProducts] = useState<Product[]>(demoProducts);
-  const [usingLocalStorage, setUsingLocalStorage] = useState(true);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productState, setProductState] = useState<
+    'loading' | 'ready' | 'error'
+  >('loading');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [storageError, setStorageError] = useState('');
+  const [legacyProducts, setLegacyProducts] = useState<Product[]>([]);
+  const mutationPending = useRef(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<ProductDraft>(emptyProductDraft);
@@ -172,70 +155,59 @@ export default function Home() {
 
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
-    fetch('/api/products')
-      .then((response) => {
-        if (!response.ok)
-          throw new ApiError(response.status, 'Banco de dados indisponível');
-        return response.json() as Promise<Product[]>;
-      })
-      .then(async (data) => {
-        if (data.length) {
-          setProducts(data.map(normalizeProduct));
-          setUsingLocalStorage(false);
-          return;
-        }
-
-        const cached =
-          window.localStorage.getItem(STORAGE_KEY) ??
-          window.localStorage.getItem(LEGACY_STORAGE_KEY);
-        let productsToImport = demoProducts;
-        if (cached) {
-          try {
-            productsToImport = (JSON.parse(cached) as Product[]).map(
-              normalizeProduct,
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    let mounted = true;
+    loadProducts(controller.signal)
+      .then((data) => {
+        if (!mounted) return;
+        setProducts(data);
+        setProductState('ready');
+        setStorageError('');
+        // Os dados antigos são preservados e só entram no banco por ação explícita.
+        try {
+          const cached =
+            window.localStorage.getItem(STORAGE_KEY) ??
+            window.localStorage.getItem(LEGACY_STORAGE_KEY);
+          const parsed: unknown = cached ? JSON.parse(cached) : [];
+          const existing = new Set(data.map((item) => item.sku.toUpperCase()));
+          if (Array.isArray(parsed)) {
+            setLegacyProducts(
+              parsed
+                .filter((item): item is Product =>
+                  Boolean(
+                    item &&
+                    typeof item === 'object' &&
+                    typeof item.sku === 'string' &&
+                    typeof item.name === 'string',
+                  ),
+                )
+                .filter((item) => !existing.has(item.sku.toUpperCase()))
+                .map(normalizeProduct),
             );
-          } catch {
-            productsToImport = demoProducts;
           }
+        } catch {
+          // Não sobrescrever nem apagar uma cópia antiga que não pôde ser lida.
         }
-
-        const importResponse = await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(productsToImport),
-        });
-        if (!importResponse.ok)
-          throw new Error('Não foi possível migrar os dados locais');
-        const imported = (await importResponse.json()) as Product[];
-        setProducts(imported.map(normalizeProduct));
-        setUsingLocalStorage(false);
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.localStorage.removeItem(LEGACY_STORAGE_KEY);
       })
       .catch((error: unknown) => {
+        if (!mounted) return;
         if (error instanceof ApiError && error.status === 401) {
           setAdmin(null);
           setAuthStatus('unauthenticated');
-          return;
         }
-        const saved =
-          window.localStorage.getItem(STORAGE_KEY) ??
-          window.localStorage.getItem(LEGACY_STORAGE_KEY);
-        if (saved) {
-          try {
-            setProducts((JSON.parse(saved) as Product[]).map(normalizeProduct));
-          } catch {
-            setProducts(demoProducts);
-          }
-        }
-        setUsingLocalStorage(true);
-      });
-  }, [authStatus]);
-
-  useEffect(() => {
-    if (authStatus === 'authenticated' && usingLocalStorage)
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
-  }, [authStatus, products, usingLocalStorage]);
+        setProductState('error');
+        setStorageError(
+          'Não foi possível carregar o banco. Nenhuma alteração será salva apenas no navegador. Confira o servidor e tente novamente.',
+        );
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      mounted = false;
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [authStatus, loadAttempt]);
 
   useEffect(() => {
     if (!notice) return;
@@ -287,9 +259,17 @@ export default function Home() {
             costCents: Math.max(0, Number(values.costCents) || 0),
             saleCents: Math.max(0, Number(values.saleCents) || 0),
           };
-          const saved = usingLocalStorage
-            ? product
-            : await persistProduct(product, 'POST');
+          if (productState !== 'ready' || mutationPending.current)
+            throw new Error(
+              'Aguarde o carregamento ou o salvamento do estoque.',
+            );
+          mutationPending.current = true;
+          let saved: Product;
+          try {
+            saved = await persistProduct(product, 'POST');
+          } finally {
+            mutationPending.current = false;
+          }
           setProducts((current) => [saved, ...current]);
           setNotice('Produto adicionado ao estoque.');
           return { id: saved.id, sku: saved.sku, status: 'created' };
@@ -299,28 +279,34 @@ export default function Home() {
     );
     void Promise.resolve(registration).catch(() => undefined);
     return () => lifecycle.abort();
-  }, [authStatus, usingLocalStorage]);
+  }, [authStatus, productState]);
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     setAdmin(null);
     setAuthStatus('unauthenticated');
-    setProducts(demoProducts);
+    setProducts([]);
+    setProductState('loading');
+    setStorageError('');
+    setLegacyProducts([]);
     setDialogOpen(false);
   }
 
   function selectSection(section: SectionKey) {
+    setSaleProduct(null);
     setActiveSection(section);
     setMobileMenuOpen(false);
   }
 
   function openCreate() {
+    if (productState !== 'ready' || mutationPending.current) return;
     setEditingId(null);
     setDraft(emptyProductDraft);
     setDialogOpen(true);
   }
 
   function openEdit(product: Product) {
+    if (productState !== 'ready' || mutationPending.current) return;
     const { id, ...values } = product;
     setEditingId(id);
     setDraft(values);
@@ -329,13 +315,19 @@ export default function Home() {
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.sku.trim()) return;
+    if (
+      !draft.name.trim() ||
+      !draft.sku.trim() ||
+      productState !== 'ready' ||
+      mutationPending.current
+    )
+      return;
+    mutationPending.current = true;
+    setStorageError('');
     setSaving(true);
     const product = { ...draft, id: editingId ?? Date.now() };
     try {
-      const saved = usingLocalStorage
-        ? product
-        : await persistProduct(product, editingId ? 'PUT' : 'POST');
+      const saved = await persistProduct(product, editingId ? 'PUT' : 'POST');
       setProducts((current) =>
         editingId
           ? current.map((item) => (item.id === editingId ? saved : item))
@@ -343,87 +335,103 @@ export default function Home() {
       );
       setDialogOpen(false);
       setNotice(
-        editingId ? 'Produto atualizado.' : 'Produto adicionado ao estoque.',
+        editingId ? 'Alterações salvas no banco.' : 'Produto salvo no banco.',
       );
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setAdmin(null);
         setAuthStatus('unauthenticated');
       } else {
-        setNotice(
+        setStorageError(
           error instanceof Error
             ? error.message
             : 'Não foi possível salvar o produto agora.',
         );
       }
     } finally {
+      mutationPending.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function saveInventoryAction(
+    operation: () => Promise<void>,
+    message: string,
+  ) {
+    if (productState !== 'ready' || mutationPending.current) return;
+    mutationPending.current = true;
+    setSaving(true);
+    setStorageError('');
+    try {
+      await operation();
+      setNotice(message);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAdmin(null);
+        setAuthStatus('unauthenticated');
+      }
+      setStorageError(
+        error instanceof Error
+          ? error.message
+          : 'O banco não confirmou a alteração. Tente novamente.',
+      );
+    } finally {
+      mutationPending.current = false;
       setSaving(false);
     }
   }
 
   async function deleteProduct(product: Product) {
-    if (!window.confirm(`Excluir “${product.name}” do catálogo?`)) return;
-    const previous = products;
-    setProducts((current) => current.filter((item) => item.id !== product.id));
-    if (!usingLocalStorage) {
-      try {
-        const response = await fetch(`/api/products?id=${product.id}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as {
-            error?: string;
-          } | null;
-          throw new ApiError(
-            response.status,
-            payload?.error ?? 'Falha ao excluir.',
-          );
-        }
-      } catch (error) {
-        setProducts(previous);
-        if (error instanceof ApiError && error.status === 401) {
-          setAdmin(null);
-          setAuthStatus('unauthenticated');
-        } else {
-          setNotice(
-            error instanceof Error
-              ? error.message
-              : 'Não foi possível excluir o produto.',
-          );
-        }
-        return;
-      }
-    }
-    setNotice('Produto excluído do catálogo.');
+    if (
+      mutationPending.current ||
+      !window.confirm(`Excluir “${product.name}” do catálogo?`)
+    )
+      return;
+    await saveInventoryAction(async () => {
+      await productRequest<void>({ method: 'DELETE' }, `?id=${product.id}`);
+      setProducts((current) =>
+        current.filter((item) => item.id !== product.id),
+      );
+    }, 'Exclusão salva no banco.');
   }
 
   async function requestPurchase(product: Product) {
     const suggested = Math.max(product.minStock * 3 - product.stock, 20);
-    const updated = { ...product, incoming: product.incoming + suggested };
-    setProducts((current) =>
-      current.map((item) => (item.id === product.id ? updated : item)),
-    );
-    if (!usingLocalStorage) {
-      try {
-        await persistProduct(updated, 'PUT');
-      } catch (error) {
-        setProducts((current) =>
-          current.map((item) => (item.id === product.id ? product : item)),
-        );
-        if (error instanceof ApiError && error.status === 401) {
-          setAdmin(null);
-          setAuthStatus('unauthenticated');
-        } else {
-          setNotice(
-            error instanceof Error
-              ? error.message
-              : 'Não foi possível solicitar a compra.',
-          );
-        }
-        return;
-      }
-    }
-    setNotice(`Compra de ${suggested} unidades solicitada.`);
+    await saveInventoryAction(async () => {
+      const updated = await persistProduct(
+        { ...product, incoming: product.incoming + suggested },
+        'PUT',
+      );
+      setProducts((current) =>
+        current.map((item) => (item.id === product.id ? updated : item)),
+      );
+    }, `Reposição de ${suggested} unidades salva no banco. O fornecedor não foi contatado.`);
+  }
+
+  async function restoreLegacyProducts() {
+    if (
+      !legacyProducts.length ||
+      !window.confirm(
+        'Importar os produtos antigos deste navegador que ainda não existem no banco?',
+      )
+    )
+      return;
+    await saveInventoryAction(async () => {
+      const imported = await productRequest<Product[]>(
+        { method: 'POST', body: JSON.stringify(legacyProducts) },
+        '?mode=restore',
+      );
+      setProducts(imported.map(normalizeProduct));
+      setLegacyProducts([]);
+      // Manter a cópia antiga como recuperação; nunca importar automaticamente.
+    }, 'Produtos antigos importados e salvos no banco.');
+  }
+
+  function retryProducts() {
+    if (mutationPending.current) return;
+    setProductState('loading');
+    setStorageError('');
+    setLoadAttempt((attempt) => attempt + 1);
   }
 
   if (authStatus === 'loading') return <AuthLoading />;
@@ -431,6 +439,10 @@ export default function Home() {
     return (
       <LoginView
         onAuthenticated={(nextAdmin) => {
+          setProducts([]);
+          setProductState('loading');
+          setStorageError('');
+          setLegacyProducts([]);
           setAdmin(nextAdmin);
           setAuthStatus('authenticated');
         }}
@@ -441,6 +453,7 @@ export default function Home() {
     <main className="dashboard-theme min-h-screen bg-[#fff7f5] text-[#2b1916] dark:bg-[#160d0b] dark:text-[#fff1ed]">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         <DashboardSidebar
+          order={sidebar.order}
           activeSection={activeSection}
           onSelect={selectSection}
         />
@@ -476,6 +489,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleLogout}
+                disabled={saving}
                 className="grid size-10 place-items-center rounded-xl border border-[#eadeda] bg-white text-[#765b55] transition hover:border-[#ffc7bb] hover:bg-[#fff0ec] hover:text-[#d94122] dark:border-[#54342e] dark:bg-[#241512] dark:text-[#d6b8b0] dark:hover:border-[#8c4c3e] dark:hover:bg-[#542217] dark:hover:text-[#ff8c75]"
                 aria-label="Sair do painel"
                 title="Sair"
@@ -484,6 +498,7 @@ export default function Home() {
               </button>
               <Button
                 onClick={openCreate}
+                disabled={productState !== 'ready' || saving}
                 className="h-10 rounded-xl bg-[#ee4d2d] px-4 text-white shadow-sm hover:bg-[#d73211]"
               >
                 <PlusIcon />
@@ -496,6 +511,7 @@ export default function Home() {
           {mobileMenuOpen ? (
             <div className="border-b border-[#dfe4da] bg-[#eef1e9] p-4 dark:border-[#2b3b31] dark:bg-[#131f18] lg:hidden">
               <MobileNavigation
+                order={sidebar.order}
                 activeSection={activeSection}
                 onSelect={selectSection}
               />
@@ -503,25 +519,84 @@ export default function Home() {
           ) : null}
 
           <div className="px-4 py-6 sm:px-7 xl:px-10 xl:py-8">
-            {activeSection === 'overview' ? (
+            {productState === 'loading' && (
+              <p role="status" className="mb-5 text-sm">
+                Carregando seus dados salvos…
+              </p>
+            )}
+            {storageError && (
+              <div
+                role="alert"
+                className="mb-5 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+              >
+                {storageError}
+                {productState === 'error' && (
+                  <Button
+                    variant="outline"
+                    className="ml-3"
+                    onClick={retryProducts}
+                  >
+                    Tentar novamente
+                  </Button>
+                )}
+              </div>
+            )}
+            {productState === 'ready' && (
+              <p role="status" className="mb-4 text-sm text-[#718075]">
+                {saving
+                  ? 'Salvando no banco… Aguarde a confirmação.'
+                  : 'Estoque e reposições: alterações confirmadas ficam salvas no banco deste computador.'}
+              </p>
+            )}
+            {productState === 'ready' && legacyProducts.length > 0 && (
+              <div className="mb-5 rounded-xl border border-[#eadeda] p-4 text-sm">
+                <p>
+                  Há {legacyProducts.length} produto(s) antigo(s) guardado(s)
+                  somente neste navegador. A cópia foi preservada.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-3"
+                  disabled={saving}
+                  onClick={restoreLegacyProducts}
+                >
+                  Importar para o banco
+                </Button>
+              </div>
+            )}
+            {activeSection === 'overview' && productState === 'ready' ? (
               <OverviewView
                 products={products}
                 totals={totals}
-                usingLocalStorage={usingLocalStorage}
+                usingLocalStorage={false}
                 onOpenProduct={openEdit}
               />
             ) : null}
-            {activeSection === 'products' ? (
+            {activeSection === 'products' && productState === 'ready' ? (
               <ProductsView
+                onSell={(product) => {
+                  setSaleProduct(product);
+                  setActiveSection('orders');
+                  setMobileMenuOpen(false);
+                }}
                 products={products}
                 onCreate={openCreate}
                 onEdit={openEdit}
                 onDelete={deleteProduct}
               />
             ) : null}
-            {activeSection === 'orders' ? <OrdersView /> : null}
-            {activeSection === 'deliveries' ? <DeliveriesView /> : null}
-            {activeSection === 'restocks' ? (
+            {activeSection === 'orders' ? (
+              <OrdersView
+                onAction={setNotice}
+                products={products}
+                initialProduct={saleProduct}
+                onSaleClose={() => setSaleProduct(null)}
+              />
+            ) : null}
+            {activeSection === 'deliveries' ? (
+              <DeliveriesView onAction={setNotice} />
+            ) : null}
+            {activeSection === 'restocks' && productState === 'ready' ? (
               <RestocksView
                 products={products}
                 onRequestPurchase={requestPurchase}
@@ -530,6 +605,7 @@ export default function Home() {
             {activeSection === 'ads' ? <AdsView onAction={setNotice} /> : null}
             {activeSection === 'settings' ? (
               <SettingsView
+                sidebar={sidebar}
                 darkMode={darkMode}
                 onDarkModeChange={updateDarkMode}
               />
@@ -540,11 +616,14 @@ export default function Home() {
 
       <ProductDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          if (!saving) setDialogOpen(open);
+        }}
         draft={draft}
         setDraft={setDraft}
         editing={editingId !== null}
         saving={saving}
+        error={storageError}
         onSubmit={handleSubmit}
       />
       {notice ? (
@@ -567,6 +646,7 @@ type ProductDialogProps = {
   setDraft: (draft: ProductDraft) => void;
   editing: boolean;
   saving: boolean;
+  error: string;
   onSubmit: (event: SubmitEvent<HTMLFormElement>) => void;
 };
 
@@ -577,11 +657,15 @@ function ProductDialog({
   setDraft,
   editing,
   saving,
+  error,
   onSubmit,
 }: ProductDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl sm:max-w-[620px]">
+      <DialogContent
+        showCloseButton={!saving}
+        className="max-h-[90vh] overflow-y-auto rounded-2xl sm:max-w-[620px]"
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold tracking-[-0.03em]">
             {editing ? 'Editar produto' : 'Adicionar produto'}
@@ -677,11 +761,20 @@ function ProductDialog({
               setDraft({ ...draft, weeklyAdRevenueCents: value })
             }
           />
+          {error && (
+            <p
+              role="alert"
+              className="text-sm text-red-600 dark:text-red-300 sm:col-span-2"
+            >
+              {error}
+            </p>
+          )}
           <DialogFooter className="sm:col-span-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
+              disabled={saving}
             >
               Cancelar
             </Button>

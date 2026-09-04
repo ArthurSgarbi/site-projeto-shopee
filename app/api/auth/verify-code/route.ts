@@ -1,10 +1,9 @@
 import { verifyLoginCode } from '@/lib/auth';
-
-const noStoreHeaders = { 'Cache-Control': 'no-store' };
+import { httpFailure, noStoreHeaders, readJson } from '@/lib/http-security';
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as {
+    const body = (await readJson(request, 2_048)) as {
       challengeId?: unknown;
       code?: unknown;
     };
@@ -38,6 +37,8 @@ export async function POST(request: Request) {
       { status: 401, headers: noStoreHeaders },
     );
   } catch (error) {
+    const failure = httpFailure(error);
+    if (failure) return failure;
     console.error(
       '[auth/verify-code] Falha ao validar código.',
       error instanceof Error ? error.message : 'erro desconhecido',

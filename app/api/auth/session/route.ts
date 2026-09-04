@@ -1,6 +1,6 @@
 import { getSessionAdmin } from '@/lib/auth';
 
-const noStoreHeaders = { 'Cache-Control': 'no-store' };
+import { noStoreHeaders } from '@/lib/http-security';
 
 export async function GET(request: Request) {
   try {

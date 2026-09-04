@@ -4,13 +4,11 @@ import {
   LoginCooldownError,
 } from '@/lib/auth';
 import { sendLoginCodeEmail } from '@/lib/email';
-import { getEmailFailureMessage } from '@/lib/email-config';
-
-const noStoreHeaders = { 'Cache-Control': 'no-store' };
+import { httpFailure, noStoreHeaders, readJson } from '@/lib/http-security';
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as {
+    const body = (await readJson(request, 4_096)) as {
       email?: unknown;
       password?: unknown;
     };
@@ -18,7 +16,9 @@ export async function POST(request: Request) {
       typeof body.email !== 'string' ||
       typeof body.password !== 'string' ||
       !body.email.trim() ||
-      !body.password
+      body.email.length > 254 ||
+      !body.password ||
+      body.password.length > 128
     ) {
       return Response.json(
         { error: 'Informe seu e-mail e senha.' },
@@ -26,7 +26,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const challenge = await createLoginChallenge(body.email, body.password);
+    const challenge = await createLoginChallenge(
+      request,
+      body.email,
+      body.password,
+    );
     if (!challenge)
       return Response.json(
         { error: 'E-mail ou senha inválidos.' },
@@ -41,9 +45,7 @@ export async function POST(request: Request) {
         error instanceof Error ? error.message : 'erro desconhecido',
       );
       return Response.json(
-        {
-          error: getEmailFailureMessage(error),
-        },
+        { error: 'Não foi possível enviar o código agora. Tente mais tarde.' },
         { status: 503, headers: noStoreHeaders },
       );
     }
@@ -51,11 +53,13 @@ export async function POST(request: Request) {
       {
         challengeId: challenge.challengeId,
         maskedEmail: challenge.maskedEmail,
-        expiresInSeconds: 600,
+        expiresInSeconds: challenge.expiresInSeconds,
       },
-      { headers: noStoreHeaders },
+      { headers: { ...noStoreHeaders, 'Set-Cookie': challenge.cookie } },
     );
   } catch (error) {
+    const failure = httpFailure(error);
+    if (failure) return failure;
     if (error instanceof LoginCooldownError) {
       return Response.json(
         {

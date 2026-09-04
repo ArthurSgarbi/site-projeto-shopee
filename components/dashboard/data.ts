@@ -1,4 +1,4 @@
-import type { Campaign, Delivery, Order, Product, ProductDraft } from './types';
+import type { Campaign, Product, ProductDraft } from './types';
 
 export const demoProducts: Product[] = [
   {
@@ -99,106 +99,6 @@ export const emptyProductDraft: ProductDraft = {
   weeklyAdRevenueCents: 0,
 };
 
-export const orders: Order[] = [
-  {
-    id: '#SM-1048',
-    customer: 'Mariana Costa',
-    initials: 'MC',
-    date: '02 set, 14:32',
-    totalCents: 8990,
-    items: 3,
-    status: 'Pago',
-  },
-  {
-    id: '#SM-1047',
-    customer: 'Lucas Martins',
-    initials: 'LM',
-    date: '02 set, 13:18',
-    totalCents: 4990,
-    items: 1,
-    status: 'Pendente',
-  },
-  {
-    id: '#SM-1046',
-    customer: 'Camila Souza',
-    initials: 'CS',
-    date: '02 set, 11:05',
-    totalCents: 12870,
-    items: 3,
-    status: 'Pago',
-  },
-  {
-    id: '#SM-1045',
-    customer: 'Rafael Lima',
-    initials: 'RL',
-    date: '01 set, 19:44',
-    totalCents: 3780,
-    items: 2,
-    status: 'Cancelado',
-  },
-  {
-    id: '#SM-1044',
-    customer: 'Beatriz Alves',
-    initials: 'BA',
-    date: '01 set, 17:21',
-    totalCents: 7470,
-    items: 3,
-    status: 'Pago',
-  },
-  {
-    id: '#SM-1043',
-    customer: 'Felipe Rocha',
-    initials: 'FR',
-    date: '01 set, 15:09',
-    totalCents: 2990,
-    items: 1,
-    status: 'Pendente',
-  },
-];
-
-export const deliveries: Delivery[] = [
-  {
-    trackingCode: 'BR245901783SP',
-    carrier: 'Correios',
-    orderId: '#SM-1042',
-    status: 'Em trânsito',
-    destination: 'Campinas, SP',
-    estimate: '04 set',
-  },
-  {
-    trackingCode: 'SHPEXP8831921',
-    carrier: 'Shopee Xpress',
-    orderId: '#SM-1040',
-    status: 'Entregue',
-    destination: 'Santos, SP',
-    estimate: 'Entregue hoje',
-  },
-  {
-    trackingCode: 'LOGGI67402911',
-    carrier: 'Loggi',
-    orderId: '#SM-1039',
-    status: 'Preparando',
-    destination: 'Niterói, RJ',
-    estimate: '05 set',
-  },
-  {
-    trackingCode: 'JAD883421789',
-    carrier: 'Jadlog',
-    orderId: '#SM-1038',
-    status: 'Em trânsito',
-    destination: 'Curitiba, PR',
-    estimate: '06 set',
-  },
-  {
-    trackingCode: 'SHPEXP8831704',
-    carrier: 'Shopee Xpress',
-    orderId: '#SM-1037',
-    status: 'Entregue',
-    destination: 'Osasco, SP',
-    estimate: 'Entregue ontem',
-  },
-];
-
 export const campaigns: Campaign[] = [
   {
     id: 1,
@@ -210,6 +110,8 @@ export const campaigns: Campaign[] = [
     clicks: 612,
     conversions: 24,
     theme: 'forest',
+    status: 'Ativa',
+    isDemo: true,
   },
   {
     id: 2,
@@ -221,6 +123,8 @@ export const campaigns: Campaign[] = [
     clicks: 384,
     conversions: 15,
     theme: 'gold',
+    status: 'Ativa',
+    isDemo: true,
   },
   {
     id: 3,
@@ -232,6 +136,8 @@ export const campaigns: Campaign[] = [
     clicks: 291,
     conversions: 8,
     theme: 'blue',
+    status: 'Ativa',
+    isDemo: true,
   },
 ];
 

@@ -4,13 +4,11 @@ import {
   resendLoginChallenge,
 } from '@/lib/auth';
 import { sendLoginCodeEmail } from '@/lib/email';
-import { getEmailFailureMessage } from '@/lib/email-config';
-
-const noStoreHeaders = { 'Cache-Control': 'no-store' };
+import { httpFailure, noStoreHeaders, readJson } from '@/lib/http-security';
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { challengeId?: unknown };
+    const body = (await readJson(request, 2_048)) as { challengeId?: unknown };
     if (typeof body.challengeId !== 'string' || !body.challengeId) {
       return Response.json(
         { error: 'Solicitação de código inválida.' },
@@ -18,7 +16,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const challenge = await resendLoginChallenge(body.challengeId);
+    const challenge = await resendLoginChallenge(request, body.challengeId);
     if (!challenge) {
       return Response.json(
         {
@@ -38,27 +36,22 @@ export async function POST(request: Request) {
         error instanceof Error ? error.message : 'erro desconhecido',
       );
       return Response.json(
-        { error: getEmailFailureMessage(error) },
+        { error: 'Não foi possível enviar o código agora. Tente mais tarde.' },
         { status: 503, headers: noStoreHeaders },
       );
     }
-
-    await discardLoginChallenge(body.challengeId).catch((error) => {
-      console.error(
-        '[auth/resend-code] Falha ao invalidar código anterior.',
-        error instanceof Error ? error.message : 'erro desconhecido',
-      );
-    });
 
     return Response.json(
       {
         challengeId: challenge.challengeId,
         maskedEmail: challenge.maskedEmail,
-        expiresInSeconds: 600,
+        expiresInSeconds: challenge.expiresInSeconds,
       },
-      { headers: noStoreHeaders },
+      { headers: { ...noStoreHeaders, 'Set-Cookie': challenge.cookie } },
     );
   } catch (error) {
+    const failure = httpFailure(error);
+    if (failure) return failure;
     if (error instanceof LoginCooldownError) {
       return Response.json(
         {

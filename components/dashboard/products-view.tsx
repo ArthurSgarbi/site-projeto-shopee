@@ -5,6 +5,7 @@ import {
   PencilSquareIcon,
   PlusIcon,
   TrashIcon,
+  ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ type ProductsViewProps = {
   onCreate: () => void;
   onEdit: (product: Product) => void;
   onDelete: (product: Product) => void;
+  onSell: (product: Product) => void;
 };
 
 export function ProductsView({
@@ -33,6 +35,7 @@ export function ProductsView({
   onCreate,
   onEdit,
   onDelete,
+  onSell,
 }: ProductsViewProps) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'low'>('all');
@@ -153,7 +156,16 @@ export function ProductsView({
                       </Badge>
                     </TableCell>
                     <TableCell className="pr-5">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onSell(product)}
+                          aria-label={`Registrar venda de ${product.name}`}
+                        >
+                          <ShoppingBagIcon />
+                          Registrar venda
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"

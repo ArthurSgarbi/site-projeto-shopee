@@ -29,25 +29,47 @@ export type ProductDraft = Omit<Product, 'id'>;
 export type OrderStatus = 'Pendente' | 'Pago' | 'Cancelado';
 
 export type Order = {
-  id: string;
+  id: number;
+  orderNumber: string;
   customer: string;
-  initials: string;
   date: string;
   totalCents: number;
   items: number;
   status: OrderStatus;
+  productName: string;
+  destination: string;
+  carrier: string;
+  estimate: string;
+  deliveryGenerated: boolean;
+  hasDelivery: boolean;
 };
 
-export type DeliveryStatus = 'Preparando' | 'Em trânsito' | 'Entregue';
+export type DeliveryStatus = 'Não enviado' | 'A caminho' | 'Entregue';
 
 export type Delivery = {
+  id: number;
   trackingCode: string;
   carrier: string;
   orderId: string;
   status: DeliveryStatus;
   destination: string;
   estimate: string;
+  shippedAt: string;
+  deliveredAt: string;
+  productName: string;
+  customer: string;
+  items: number;
+  orderStatus: OrderStatus;
 };
+
+export type OrderDraft = Omit<
+  Order,
+  'id' | 'deliveryGenerated' | 'hasDelivery'
+>;
+export type DeliveryDraft = Omit<
+  Delivery,
+  'id' | 'productName' | 'customer' | 'items' | 'orderStatus'
+>;
 
 export type Campaign = {
   id: number;
@@ -59,6 +81,8 @@ export type Campaign = {
   clicks: number;
   conversions: number;
   theme: 'forest' | 'gold' | 'blue';
+  status: 'Ativa' | 'Pausada';
+  isDemo: boolean;
 };
 
 export type FinancialTotals = {
