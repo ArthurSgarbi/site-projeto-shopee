@@ -2,20 +2,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Miniflare } from 'miniflare';
 import { insertAuthenticatedSession } from './auth-fixtures.mjs';
+import {
+  createTestDatabase,
+  fileDatabaseUrl,
+  migrateTestDatabase,
+  startNextTestRuntime,
+} from './next-test-runtime.mjs';
 
 const projectDir = path.resolve(import.meta.dirname, '..');
-const serverDir = path.join(projectDir, 'dist/server');
-const entry = path.join(serverDir, 'index.js');
-const files = fs
-  .readdirSync(serverDir, { recursive: true })
-  .filter((name) => name.endsWith('.js'))
-  .map((name) => path.join(serverDir, name));
 // Pasta temporária exclusiva. Não carrega .dev.vars nem o banco do usuário.
 const testDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), 'sync-persistence-'),
 );
+const databaseUrl = fileDatabaseUrl(path.join(testDirectory, 'test.db'));
 let token = '';
 const headers = {
   Cookie: `sync_mobile_session=${token}`,
@@ -23,23 +23,12 @@ const headers = {
   Origin: 'http://localhost',
 };
 let runtime;
+let db;
+let completed = false;
 
 async function start() {
-  runtime = new Miniflare({
-    host: '127.0.0.1',
-    port: 0,
-    modulesRoot: projectDir,
-    modules: [entry, ...files.filter((file) => file !== entry)].map((file) => ({
-      type: 'ESModule',
-      path: file,
-    })),
-    compatibilityDate: '2026-05-15',
-    compatibilityFlags: ['nodejs_compat'],
-    d1Databases: { DB: 'sync-persistence-test' },
-    d1Persist: testDirectory,
-  });
-  await runtime.ready;
-  return runtime.getD1Database('DB');
+  runtime = await startNextTestRuntime(projectDir, databaseUrl);
+  return createTestDatabase(databaseUrl);
 }
 
 async function call(url, method = 'GET', body, expected = 200) {
@@ -53,18 +42,8 @@ async function call(url, method = 'GET', body, expected = 200) {
 }
 
 try {
-  const db = await start();
-  for (const file of fs
-    .readdirSync(path.join(projectDir, 'drizzle'))
-    .filter((name) => name.endsWith('.sql'))
-    .sort()) {
-    for (const sql of fs
-      .readFileSync(path.join(projectDir, 'drizzle', file), 'utf8')
-      .split('--> statement-breakpoint')
-      .map((sql) => sql.trim())
-      .filter(Boolean))
-      await db.prepare(sql).run();
-  }
+  await migrateTestDatabase(projectDir, databaseUrl);
+  db = await start();
   await db
     .prepare(
       "INSERT INTO admins (email, password_hash, role, created_at) VALUES ('persistence@example.com', 'test-only', 'owner', ?)",
@@ -179,8 +158,9 @@ try {
   await call('/api/preferences', 'PUT', { sidebarOrder });
 
   await runtime.dispose();
+  db.client.close();
   runtime = undefined;
-  await start();
+  db = await start();
   const restored = await call('/api/products');
   assert.equal(restored.length, 1);
   for (const key of [
@@ -205,8 +185,9 @@ try {
   await call(`/api/campaigns?id=${id}`, 'DELETE', undefined, 204);
 
   await runtime.dispose();
+  db.client.close();
   runtime = undefined;
-  await start();
+  db = await start();
   assert.deepEqual(await call('/api/products'), []);
   assert.deepEqual(await call('/api/campaigns'), []);
   assert.deepEqual(await call('/api/orders'), []);
@@ -215,8 +196,10 @@ try {
   console.log(
     'Persistência aprovada após duas reinicializações: produtos, estoque, despesas, reposições, anúncios, pedidos, entregas, ordem do menu e exclusões. Banco real não acessado.',
   );
+  completed = true;
 } finally {
   await runtime?.dispose();
+  db?.client.close();
   // Somente a pasta aleatória criada neste teste pode ser removida.
   const resolved = fs.realpathSync(testDirectory);
   const temporaryRoot = fs.realpathSync(os.tmpdir());
@@ -225,5 +208,22 @@ try {
     !path.basename(resolved).startsWith('sync-persistence-')
   )
     console.error('Diretório temporário inesperado; limpeza cancelada.');
-  else fs.rmSync(resolved, { recursive: true, force: true });
+  else {
+    try {
+      fs.rmSync(resolved, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    } catch (error) {
+      console.warn(
+        error instanceof Error && 'code' in error && error.code === 'EPERM'
+          ? 'O Windows concluirá a limpeza do banco temporário depois.'
+          : 'Não foi possível remover o banco temporário do teste.',
+      );
+    }
+  }
 }
+
+if (completed) process.exit(0);

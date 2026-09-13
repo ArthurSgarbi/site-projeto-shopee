@@ -545,7 +545,7 @@ export default function Home() {
               <p role="status" className="mb-4 text-sm text-[#718075]">
                 {saving
                   ? 'Salvando no banco… Aguarde a confirmação.'
-                  : 'Estoque e reposições: alterações confirmadas ficam salvas no banco deste computador.'}
+                  : 'Estoque e reposições: alterações confirmadas ficam salvas no banco do SYNC Mobile.'}
               </p>
             )}
             {productState === 'ready' && legacyProducts.length > 0 && (

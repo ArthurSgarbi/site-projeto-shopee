@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import { getEmailConfigurationError } from '@/lib/email-config';
 
 function escapeHtml(value: string) {
@@ -12,17 +11,20 @@ function escapeHtml(value: string) {
 }
 
 export async function sendLoginCodeEmail(recipient: string, code: string) {
-  const configurationError = getEmailConfigurationError(env.RESEND_API_KEY);
+  const configurationError = getEmailConfigurationError(
+    process.env.RESEND_API_KEY,
+  );
   if (configurationError) throw new Error(configurationError);
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     signal: AbortSignal.timeout(10_000),
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY?.trim()}`,
+      Authorization: `Bearer ${process.env.RESEND_API_KEY?.trim()}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: env.EMAIL_FROM ?? 'SYNC Mobile <onboarding@resend.dev>',
+      from:
+        process.env.EMAIL_FROM ?? 'SYNC Mobile <onboarding@resend.dev>',
       to: [recipient],
       subject: 'Seu código de acesso ao SYNC Mobile',
       html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;color:#2b1916"><p style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#ee4d2d;font-weight:700">SYNC Mobile</p><h1 style="font-size:24px;margin:20px 0 8px">Confirme seu acesso</h1><p style="color:#765b55;line-height:1.6">Use o código abaixo para concluir seu login. Ele expira em 10 minutos.</p><div style="background:#fff0ec;border:1px solid #ffc7bb;border-radius:12px;padding:18px;text-align:center;margin:24px 0"><span style="font-size:34px;letter-spacing:.3em;font-weight:700;color:#d94122">${escapeHtml(code)}</span></div><p style="font-size:12px;color:#9a7770">Se você não tentou entrar no painel, ignore este e-mail.</p></div>`,

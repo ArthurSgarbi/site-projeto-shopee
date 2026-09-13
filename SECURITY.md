@@ -17,8 +17,8 @@ As escolhas seguem as recomendações atuais da [OWASP para senhas](https://chea
 
 1. Revogue qualquer chave da Resend que tenha aparecido em imagem, chat ou repositório e crie outra no painel da Resend.
 2. Entre no painel, abra **Configurações > Segurança da conta** e troque a senha por uma exclusiva de pelo menos 12 caracteres.
-3. Depois de comprovar o novo login, remova `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` de `.dev.vars`. A conta continuará no banco.
-4. Nunca envie `.dev.vars`, `.wrangler`, bancos SQLite ou ZIPs que contenham esses arquivos.
+3. Depois de comprovar o novo login, remova `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` de `.dev.vars`, `.env.local` e da Vercel. A conta continuará no banco.
+4. Nunca envie `.dev.vars`, `.env.local`, `.data`, `.wrangler`, bancos SQLite ou ZIPs que contenham esses arquivos.
 5. Ao publicar o sistema, use HTTPS, um provedor de segredos e backups criptografados. O login do site não protege arquivos contra outra pessoa que já tenha acesso à mesma conta do Windows.
 
 Nenhum sistema é inviolável. Dependências devem continuar atualizadas, e mudanças em autenticação precisam repetir os testes de segurança.

@@ -20,12 +20,16 @@ export function getLocalPort(args = [], environment = process.env) {
 }
 
 export function readLocalBindings(projectDir, environment = process.env) {
-  const varsPath = path.join(projectDir, '.dev.vars');
-  const parsed = fs.existsSync(varsPath)
-    ? parseEnv(fs.readFileSync(varsPath, 'utf8'))
-    : {};
+  const parsed = ['.dev.vars', '.env.local'].reduce((values, name) => {
+    const filePath = path.join(projectDir, name);
+    return fs.existsSync(filePath)
+      ? { ...values, ...parseEnv(fs.readFileSync(filePath, 'utf8')) }
+      : values;
+  }, {});
   const bindings = {};
   for (const key of [
+    'TURSO_DATABASE_URL',
+    'TURSO_AUTH_TOKEN',
     'RESEND_API_KEY',
     'EMAIL_FROM',
     'INITIAL_ADMIN_EMAIL',
@@ -78,6 +82,7 @@ export function runLocalCommand(projectDir, relativeScript, args) {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (code === 0) resolve();
+      else if (signal === 'SIGINT' || signal === 'SIGTERM') resolve();
       else
         reject(
           new Error(
@@ -89,13 +94,5 @@ export function runLocalCommand(projectDir, relativeScript, args) {
 }
 
 export function applyMigrations(projectDir) {
-  return runLocalCommand(projectDir, 'node_modules/wrangler/bin/wrangler.js', [
-    'd1',
-    'migrations',
-    'apply',
-    'site-creator-d1',
-    '--local',
-    '--config',
-    'wrangler.local.jsonc',
-  ]);
+  return runLocalCommand(projectDir, 'scripts/migrate-db.mjs', []);
 }

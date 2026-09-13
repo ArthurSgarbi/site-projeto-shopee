@@ -2,6 +2,7 @@
 
 import { SubmitEvent, useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -325,6 +326,12 @@ export function LoginView({ onAuthenticated }: LoginViewProps) {
         <p className="mt-7 text-center text-xs leading-relaxed text-[#9a7770] dark:text-[#9d8680]">
           Acesso protegido por sessão segura. Não compartilhe suas credenciais.
         </p>
+        <Link
+          href="/demo"
+          className="mt-4 block rounded-xl border border-[#f1d3cc] bg-[#fff7f5] px-4 py-3 text-center text-sm font-semibold text-[#d94122] transition hover:border-[#ee4d2d] hover:bg-[#fff0ec] dark:border-[#54342e] dark:bg-[#1b0f0d] dark:text-[#ff8c75] dark:hover:border-[#8c4c3e]"
+        >
+          Conhecer com dados de demonstração
+        </Link>
       </section>
     </main>
   );

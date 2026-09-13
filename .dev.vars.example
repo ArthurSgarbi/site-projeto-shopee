@@ -1,4 +1,8 @@
 # Copie este arquivo para .dev.vars e preencha os valores somente na cópia.
+# No computador, deixe os campos TURSO vazios para usar .data/sync-mobile.db.
+# Na Vercel, configure as duas variáveis com os dados do banco Turso.
+TURSO_DATABASE_URL=""
+TURSO_AUTH_TOKEN=""
 # Use uma chave da RESEND. Chaves do Gemini/Google não funcionam aqui.
 RESEND_API_KEY=""
 EMAIL_FROM="SYNC Mobile <onboarding@resend.dev>"
