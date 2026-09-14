@@ -18,15 +18,9 @@ npm run dev
 
 ## Como funciona o modo local
 
-`npm run dev` e `npm start` usam a mesma inicialização estável: verificam a porta, aplicam migrações, compilam a interface inteira e iniciam o servidor local com os arquivos JavaScript e CSS corretos.
+`npm run dev` verifica a porta, preserva o banco antigo na primeira execução, aplica migrações e inicia o servidor Next.js.
 
-Esse modo não usa atualização automática (HMR). Depois de alterar o código ou `.dev.vars`, encerre com Ctrl+C e execute o comando novamente. Isso evita a compilação sob demanda que demorou para responder neste ambiente Windows.
-
-O modo de desenvolvimento original com HMR continua disponível para uso avançado:
-
-```powershell
-npm run dev:hmr
-```
+Alterações de código são atualizadas automaticamente. Depois de mudar `.dev.vars`, encerre com Ctrl+C e execute `npm run dev` novamente.
 
 Se a porta 3000 já estiver ocupada, encerre somente a outra instância deste site ou escolha outra porta:
 
@@ -38,9 +32,20 @@ O programa não encerra outros processos automaticamente. Uma chave de e-mail au
 
 ## Banco de dados e segurança
 
-O ZIP inclui código, imagens, migrações e exemplos. Não inclui `.dev.vars`, senhas, sessões, cadastros reais, `.wrangler`, `dist` ou `node_modules`.
+O projeto versionado inclui código, imagens, migrações e exemplos. Não inclui `.dev.vars`, `.env.local`, senhas, sessões, cadastros reais, `.data`, `.wrangler`, `.next` ou `node_modules`.
 
-Em uma pasta extraída nova, o banco estará vazio: configure `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` em `.dev.vars`. O primeiro login válido cria o administrador. Seus dados locais ficam em `.wrangler/state/v3/d1`; preserve essa pasta no projeto original e mantenha backups privados dela. Não publique esse diretório nem `.dev.vars`.
+Em uma pasta nova, o banco estará vazio: configure `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` em `.dev.vars`. O primeiro login válido cria o administrador. Seus dados locais ficam em `.data/sync-mobile.db`; preserve essa pasta no projeto original e mantenha backups privados dela. Não publique `.data`, `.dev.vars` ou `.env.local`.
+
+## Publicar na Vercel
+
+1. Importe o repositório do GitHub na Vercel.
+2. No Marketplace da Vercel, adicione um banco Turso ao projeto.
+3. Configure `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`, `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` e `NEXT_PUBLIC_SITE_URL` nas variáveis da Vercel.
+4. Com as variáveis remotas disponíveis no computador, execute `npm run db:migrate` uma vez para preparar o banco.
+5. Publique o projeto. O comando de build é `npm run build`.
+6. Confirme o primeiro login e remova `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` da Vercel.
+
+A rota `/demo` é pública, usa somente dados fictícios e não acessa o banco administrativo. A rota `/` continua protegida por senha e código enviado por e-mail.
 
 ## Como manter suas alterações
 
@@ -56,7 +61,7 @@ Em uma pasta extraída nova, o banco estará vazio: configure `INITIAL_ADMIN_EMA
 - Ainda não há sincronização Shopee ou transportadoras. O estoque e os indicadores da Visão geral continuam com controle manual. Cancelar um pedido não cancela o transporte: revise a entrega correspondente.
 - Em Configurações, use as setas em **Organizar menu lateral** e confirme em **Salvar ordem**. Essa ordem é salva por administrador e aplicada ao menu do computador e do celular. **Restaurar ordem padrão** também precisa ser confirmado em **Salvar ordem**.
 - O tema claro/escuro continua sendo uma preferência deste navegador.
-- Use sempre a mesma pasta do projeto e preserve `.wrangler/state/v3/d1`. Fechar o site ou reiniciar o computador não apaga esse banco. Extrair outro ZIP em uma pasta nova não transfere seus dados automaticamente.
+- Use sempre a mesma pasta do projeto e preserve `.data/sync-mobile.db`. Fechar o site ou reiniciar o computador não apaga esse banco. Extrair outro ZIP em uma pasta nova não transfere seus dados automaticamente.
 - Editar código no VS Code é diferente de editar um cadastro: no modo local estável, reinicie `npm run dev` para compilar o código atualizado. Para alterações de cadastros pelo site, não é necessário reiniciar.
 
 O teste `npm run test:persistence` (após compilar) verifica gravação, fechamento, reabertura e exclusão usando somente um banco temporário.

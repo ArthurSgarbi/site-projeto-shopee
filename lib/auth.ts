@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import { getRawDb } from '@/db';
 import {
   digestToken,
@@ -112,8 +111,8 @@ async function findAdmin(email: string, password: string) {
       .bind(email)
       .first<StoredAdmin>();
   let admin = await lookup();
-  const initialEmail = env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
-  const initialPassword = env.INITIAL_ADMIN_PASSWORD;
+  const initialEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+  const initialPassword = process.env.INITIAL_ADMIN_PASSWORD;
   if (
     !admin &&
     initialEmail === email &&

@@ -122,7 +122,7 @@ async function saveOrder(request: Request) {
             `UPDATE orders SET ${columns.map((column) => `${column} = ?`).join(', ')} WHERE id = ? RETURNING id`,
           )
           .bind(...values, id);
-  // D1 batch é atômico: a venda só é confirmada se o envio também puder ser gravado.
+  // O lote é atômico: a venda só é confirmada se o envio também puder ser gravado.
   // O marcador evita recriar entregas excluídas deliberadamente. NOT EXISTS preserva envios manuais e fracionados.
   const result = await db.batch([
     write,

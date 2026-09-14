@@ -1,64 +1,35 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { Miniflare } from 'miniflare';
 import { verifyCampaigns } from './campaigns-integration.mjs';
 import { verifyRecords } from './records-integration.mjs';
 import { verifySalesFlow } from './sales-flow-integration.mjs';
 import { verifySecurity } from './security-integration.mjs';
+import {
+  createTestDatabase,
+  fileDatabaseUrl,
+  migrateTestDatabase,
+  startNextTestRuntime,
+} from './next-test-runtime.mjs';
 
 const projectDir = path.resolve(import.meta.dirname, '..');
-const serverDir = path.join(projectDir, 'dist/server');
-const entry = path.join(serverDir, 'index.js');
-const files = fs
-  .readdirSync(serverDir, { recursive: true })
-  .filter((file) => file.endsWith('.js'))
-  .map((file) => path.join(serverDir, file));
+const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-integration-'));
+const databaseUrl = fileDatabaseUrl(path.join(testDirectory, 'test.db'));
 const email = 'local-verification@example.com';
 const password = `test-only-${crypto.randomUUID()}`;
-const runtime = new Miniflare({
-  host: '127.0.0.1',
-  port: 0,
-  modulesRoot: projectDir,
-  modules: [entry, ...files.filter((file) => file !== entry)].map((file) => ({
-    type: 'ESModule',
-    path: file,
-  })),
-  compatibilityDate: '2026-05-15',
-  compatibilityFlags: ['nodejs_compat'],
-  // Banco descartável. Nenhum arquivo de credenciais ou banco real é carregado.
-  d1Databases: { DB: 'sync-mobile-isolated-test' },
-  d1Persist: false,
-  bindings: {
+let runtime;
+let db;
+let completed = false;
+
+try {
+  await migrateTestDatabase(projectDir, databaseUrl);
+  db = createTestDatabase(databaseUrl);
+  runtime = await startNextTestRuntime(projectDir, databaseUrl, {
     INITIAL_ADMIN_EMAIL: email,
     INITIAL_ADMIN_PASSWORD: password,
     RESEND_API_KEY: 'AIza-exemplo-ficticio-sem-acesso-externo',
-  },
-  assets: {
-    directory: path.join(projectDir, 'dist/client'),
-    binding: 'ASSETS',
-    routerConfig: {
-      has_user_worker: true,
-      invoke_user_worker_ahead_of_assets: false,
-    },
-  },
-});
-
-try {
-  await runtime.ready;
-  const db = await runtime.getD1Database('DB');
-  for (const file of fs
-    .readdirSync(path.join(projectDir, 'drizzle'))
-    .filter((file) => file.endsWith('.sql'))
-    .sort()) {
-    const sql = fs.readFileSync(path.join(projectDir, 'drizzle', file), 'utf8');
-    for (const statement of sql
-      .split('--> statement-breakpoint')
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await db.prepare(statement).run();
-    }
-  }
+  });
 
   const root = await runtime.dispatchFetch('http://localhost/');
   assert.equal(root.status, 200);
@@ -115,6 +86,24 @@ try {
   await verifyCampaigns(runtime, db);
   await verifyRecords(runtime, db);
   await verifySalesFlow(runtime, db);
+  completed = true;
 } finally {
-  await runtime.dispose();
+  await runtime?.dispose();
+  db?.client.close();
+  try {
+    fs.rmSync(testDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  } catch (error) {
+    console.warn(
+      error instanceof Error && 'code' in error && error.code === 'EPERM'
+        ? 'O Windows concluirá a limpeza do banco temporário depois.'
+        : 'Não foi possível remover o banco temporário do teste.',
+    );
+  }
 }
+
+if (completed) process.exit(0);

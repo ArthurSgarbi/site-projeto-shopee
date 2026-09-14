@@ -14,10 +14,15 @@ try {
   await assertPortAvailable(port);
   process.env.SYNC_MOBILE_PORT = String(port);
 
-  const { RESEND_API_KEY: emailKey } = readLocalBindings(projectDir);
+  const bindings = readLocalBindings(projectDir);
+  for (const [key, value] of Object.entries(bindings)) {
+    process.env[key] ??= value;
+  }
+  process.env.TURSO_DATABASE_URL ??= 'file:.data/sync-mobile.db';
+  const emailKey = process.env.RESEND_API_KEY;
   if (!emailKey?.trim()) {
     console.warn(
-      'E-mail ainda não configurado: preencha RESEND_API_KEY em .dev.vars. O site abrirá, mas o login exige o código por e-mail.',
+      'E-mail ainda não configurado: preencha RESEND_API_KEY em .dev.vars ou .env.local. O site abrirá, mas o login exige o código por e-mail.',
     );
   } else if (
     !emailKey.trim().startsWith('re_') ||
@@ -30,17 +35,15 @@ try {
 
   console.log('1/3 Preparando o banco local…');
   await applyMigrations(projectDir);
-  console.log(
-    '2/3 Compilando a interface. Aguarde a confirmação antes de abrir…',
-  );
-  await runLocalCommand(projectDir, 'node_modules/vinext/dist/cli.js', [
-    'build',
+  console.log('2/3 Verificando a aplicação…');
+  console.log(`3/3 SYNC Mobile disponível em http://127.0.0.1:${port}`);
+  await runLocalCommand(projectDir, 'node_modules/next/dist/bin/next', [
+    'dev',
+    '--hostname',
+    '127.0.0.1',
+    '--port',
+    String(port),
   ]);
-  console.log('3/3 Iniciando o SYNC Mobile…');
-  await import('./serve-built.mjs');
-  console.log(
-    'Modo local estável: após editar o código ou .dev.vars, encerre com Ctrl+C e execute npm run dev novamente.',
-  );
 } catch (error) {
   console.error(
     error instanceof Error ? error.message : 'Não foi possível iniciar o site.',

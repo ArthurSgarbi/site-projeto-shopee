@@ -12,7 +12,9 @@ const geistMono = Geist_Mono({
 const themeScript = `(function(){try{var saved=localStorage.getItem('sync-mobile-theme');var dark=saved==='dark'||(!saved&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',dark);document.documentElement.style.colorScheme=dark?'dark':'light'}catch(error){}})();`;
 
 export const metadata: Metadata = {
-  metadataBase: new URL('http://localhost:3000'),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000',
+  ),
   title: 'SYNC Mobile | Gestão da sua loja',
   description:
     'Controle estoque, pedidos, entregas, anúncios, reposições e lucro da sua loja em um só lugar.',
